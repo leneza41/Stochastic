@@ -1,13 +1,98 @@
 from __future__ import annotations
 
+import argparse
+import json
+import math
 import os
 import random
 import sys
-from typing import List, Tuple
+import urllib.parse
+import urllib.request
+import zipfile
+from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-from incremental_search import DStarLite, GraphIO, MovingAIMap
+from incremental_search import DStarLite, Graph, GraphIO, HeuristicType, MovingAIMap
+
+
+def download_osm_via_overpass_api(
+    bbox: Tuple[float, float, float, float],
+    timeout_s: int = 30,
+) -> Optional[Graph]:
+    """
+    Downloads a real drivable road network directly from the OpenStreetMap Overpass API
+    using only Python's standard library (urllib.request), projects coordinates to
+    planar meters, and extracts the largest connected component.
+    bbox: (south_lat, west_lon, north_lat, east_lon)
+    """
+    south, west, north, east = bbox
+    query = (
+        f'[out:json][timeout:{timeout_s}];'
+        f'(way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified)$"]'
+        f'({south},{west},{north},{east}););'
+        f'(._;>;);out body;'
+    )
+    url = "https://overpass-api.de/api/interpreter"
+    data = urllib.parse.urlencode({"data": query}).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, headers={"User-Agent": "IncrementalSearchResearch/1.0"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        print(f"  [Overpass API warning] Could not download bbox {bbox}: {exc}")
+        return None
+
+    elements = payload.get("elements", [])
+    nodes_latlon: Dict[int, Tuple[float, float]] = {}
+    ways: List[Tuple[List[int], bool]] = []
+
+    for el in elements:
+        if el.get("type") == "node":
+            nodes_latlon[int(el["id"])] = (float(el["lat"]), float(el["lon"]))
+        elif el.get("type") == "way":
+            nd_list = [int(x) for x in el.get("nodes", [])]
+            tags = el.get("tags", {})
+            oneway = tags.get("oneway", "no") in ("yes", "1", "true")
+            if len(nd_list) >= 2:
+                ways.append((nd_list, oneway))
+
+    if not nodes_latlon or not ways:
+        return None
+
+    ref_lat = 0.5 * (south + north)
+    meters_per_deg_lat = 111132.92
+    meters_per_deg_lon = 111412.84 * math.cos(math.radians(ref_lat))
+
+    osm_id_to_vid: Dict[int, int] = {}
+    raw_graph = Graph(0, HeuristicType.EUCLIDEAN)
+
+    for nd_list, _ in ways:
+        for osm_id in nd_list:
+            if osm_id not in osm_id_to_vid and osm_id in nodes_latlon:
+                lat, lon = nodes_latlon[osm_id]
+                x_m = (lon - west) * meters_per_deg_lon
+                y_m = (lat - south) * meters_per_deg_lat
+                vid = raw_graph.add_vertex(x_m, y_m)
+                osm_id_to_vid[osm_id] = vid
+
+    for nd_list, oneway in ways:
+        for i in range(len(nd_list) - 1):
+            u_osm, v_osm = nd_list[i], nd_list[i + 1]
+            if u_osm in osm_id_to_vid and v_osm in osm_id_to_vid:
+                u = osm_id_to_vid[u_osm]
+                v = osm_id_to_vid[v_osm]
+                if u == v:
+                    continue
+                cu = raw_graph.get_coordinates(u)
+                cv = raw_graph.get_coordinates(v)
+                dist_m = max(0.5, math.hypot(cu.x - cv.x, cu.y - cv.y))
+                raw_graph.add_edge(u, v, dist_m, bidirectional=not oneway)
+
+    lcc = GraphIO.extract_largest_connected_component(raw_graph)
+    return lcc if lcc.num_vertices() >= 20 else None
 
 
 def _write_movingai_map_and_scen(
@@ -76,7 +161,6 @@ def _build_rooms_grid(width: int = 48, height: int = 48) -> List[str]:
         for x in range(width):
             if (x % room_size == 0 and x > 0) or (y % room_size == 0 and y > 0):
                 grid[y][x] = "@"
-    # Carve 3-cell wide doorways in every room wall
     for ry in range(0, height, room_size):
         for rx in range(0, width, room_size):
             door_offset = room_size // 2
@@ -96,7 +180,6 @@ def _build_game_obstacles_grid(
 ) -> List[str]:
     rng = random.Random(seed)
     grid = [["." for _ in range(width)] for _ in range(height)]
-    # Place rectangular and circular obstacle clusters (trees 'T' and walls '@')
     for _ in range(18):
         cx = rng.randint(4, width - 5)
         cy = rng.randint(4, height - 5)
@@ -125,7 +208,9 @@ def _build_braid_maze_grid(
     return ["".join(row) for row in grid]
 
 
-def prepare_all_datasets(base_data_dir: str = "data") -> None:
+def prepare_all_datasets(
+    base_data_dir: str = "data", download_online: bool = False
+) -> None:
     osm_dir = os.path.join(base_data_dir, "osm")
     mai_dir = os.path.join(base_data_dir, "movingai")
     syn_dir = os.path.join(base_data_dir, "synthetic")
@@ -136,14 +221,19 @@ def prepare_all_datasets(base_data_dir: str = "data") -> None:
 
     # 1. OpenStreetMap Multi-Scale Road Networks (Small, Medium, Large)
     osm_scales = [
-        ("osm_urban_small.graph", 15, 15, 101),
-        ("osm_urban_medium.graph", 28, 28, 102),
-        ("osm_urban_large.graph", 42, 42, 103),
+        ("osm_urban_small.graph", 15, 15, 101, (20.134, -101.182, 20.142, -101.172)),
+        ("osm_urban_medium.graph", 28, 28, 102, (20.128, -101.188, 20.146, -101.168)),
+        ("osm_urban_large.graph", 42, 42, 103, (20.120, -101.196, 20.152, -101.160)),
     ]
-    for fname, bx, by, seed in osm_scales:
-        g = GraphIO.load_or_generate_osm_network(
-            place_query=None, fallback_blocks_x=bx, fallback_blocks_y=by, seed=seed
-        )
+    for fname, bx, by, seed, bbox in osm_scales:
+        g: Optional[Graph] = None
+        if download_online:
+            print(f"[OSM] Attempting live Overpass API download for {fname} {bbox}...")
+            g = download_osm_via_overpass_api(bbox)
+        if g is None:
+            g = GraphIO.load_or_generate_osm_network(
+                place_query=None, fallback_blocks_x=bx, fallback_blocks_y=by, seed=seed
+            )
         out_path = os.path.join(osm_dir, fname)
         GraphIO.save_graph(g, out_path)
         print(
@@ -189,4 +279,16 @@ def prepare_all_datasets(base_data_dir: str = "data") -> None:
 
 
 if __name__ == "__main__":
-    prepare_all_datasets()
+    parser = argparse.ArgumentParser(
+        description="Prepare or download OpenStreetMap, Moving AI, and Synthetic datasets."
+    )
+    parser.add_argument(
+        "--data-dir", default="data", help="Target directory for datasets (default: data)"
+    )
+    parser.add_argument(
+        "--download-online",
+        action="store_true",
+        help="Download live OpenStreetMap road networks from the Overpass API",
+    )
+    args = parser.parse_args()
+    prepare_all_datasets(args.data_dir, download_online=args.download_online)
