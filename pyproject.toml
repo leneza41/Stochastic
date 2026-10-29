@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "incremental_search"
+version = "0.1.0"
+description = "Empirical evaluation of D* Lite, LPA*, and Incremental A* under stochastic edge failures"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Leonardo Núñez Zavala" },
+    { name = "Alan Yael Fonseca Ruiz" },
+    { name = "Roberto Gordillo Herrera" }
+]
+dependencies = [
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "psutil>=5.9.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["python/src"]
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+pythonpath = ["python/src"]

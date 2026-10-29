@@ -1,0 +1,48 @@
+# Build artifacts (C++)
+build/
+bin/
+out/
+*.exe
+*.obj
+*.o
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.so
+*.dylib
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Data & Large Results (keep directory structure via .gitkeep)
+data/osm/*
+!data/osm/.gitkeep
+data/movingai/*
+!data/movingai/.gitkeep
+data/synthetic/*
+!data/synthetic/.gitkeep
+results/raw/*
+!results/raw/.gitkeep
+results/processed/*
+!results/processed/.gitkeep
