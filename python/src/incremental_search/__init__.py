@@ -27,6 +27,16 @@ from .simulation import (
     StepExecutionRecord,
     StochasticSimulator,
 )
+from .evaluation import (
+    DescriptiveStats,
+    EfficiencyTradeoffRecord,
+    FriedmanTestResult,
+    NonParametricTests,
+    ResearchFigureGenerator,
+    SystemEnvironmentInfo,
+    WilcoxonPairwiseResult,
+)
+from .report_builder import ResearchReportBuilder
 
 __all__ = [
     "EPSILON",
@@ -58,4 +68,12 @@ __all__ = [
     "SimulationRunOutput",
     "SampleSizeCalculator",
     "StochasticSimulator",
+    "SystemEnvironmentInfo",
+    "DescriptiveStats",
+    "WilcoxonPairwiseResult",
+    "FriedmanTestResult",
+    "EfficiencyTradeoffRecord",
+    "NonParametricTests",
+    "ResearchFigureGenerator",
+    "ResearchReportBuilder",
 ]

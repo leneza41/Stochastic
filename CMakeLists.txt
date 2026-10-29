@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(IncrementalSearchStochastic VERSION 0.2.0 LANGUAGES CXX)
+project(IncrementalSearchStochastic VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,6 +20,7 @@ set(CORE_SOURCES
     cpp/src/incremental_a_star.cpp
     cpp/src/graph_io.cpp
     cpp/src/simulation.cpp
+    cpp/src/evaluation.cpp
 )
 
 add_library(incremental_search_core STATIC ${CORE_SOURCES})
@@ -29,6 +30,9 @@ target_link_libraries(verify_equivalence PRIVATE incremental_search_core)
 
 add_executable(run_simulation cpp/src/main_simulate.cpp)
 target_link_libraries(run_simulation PRIVATE incremental_search_core)
+
+add_executable(run_benchmark_results cpp/src/main_benchmark_results.cpp)
+target_link_libraries(run_benchmark_results PRIVATE incremental_search_core)
 
 add_executable(test_algorithms cpp/tests/test_algorithms.cpp)
 target_link_libraries(test_algorithms PRIVATE incremental_search_core)
